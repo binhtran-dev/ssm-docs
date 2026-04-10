@@ -1,0 +1,18 @@
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev-local runtime
+dev-local/.env
+dev-local/data/
+dev-local/logs/
+
+# Secrets
+*.pem
+*.key
+*.env.local

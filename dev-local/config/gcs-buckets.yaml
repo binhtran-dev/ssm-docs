@@ -1,0 +1,23 @@
+# GCS Buckets for local development
+# The init-gcs.sh script reads this file to create buckets on fake-gcs-server.
+
+buckets:
+  # Document Service — unprocessed uploads
+  - name: ssm-local-unprocessed
+    description: Unprocessed document uploads (maps to 34469-ssm-dev-us-1)
+
+  # Document Service / Upload Handler — clean (virus-scanned)
+  - name: ssm-local-clean
+    description: Clean virus-scanned documents (maps to 34469-ssm-dev-us-2)
+
+  # Document Service / Upload Handler — quarantine
+  - name: ssm-local-quarantine
+    description: Quarantined documents (maps to 34469-ssm-dev-us-3)
+
+  # Active Fax — source (RightFax)
+  - name: ssm-local-fax-source
+    description: RightFax source bucket
+
+  # Active Fax — destination (processed)
+  - name: ssm-local-fax-destination
+    description: Processed fax files destination

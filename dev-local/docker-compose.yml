@@ -1,0 +1,126 @@
+services:
+  # ============================================================
+  # MongoDB
+  # ============================================================
+  mongodb:
+    image: mongo:7
+    container_name: ssm-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+      - ./config/mongodb-init.js:/docker-entrypoint-initdb.d/init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # Google Cloud Pub/Sub Emulator
+  # ============================================================
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: ssm-pubsub
+    command: >
+      gcloud beta emulators pubsub start
+      --project=${GCP_PROJECT_ID:-ssm-local}
+      --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot container to create topics & subscriptions
+  pubsub-init:
+    image: python:3.12-slim
+    container_name: ssm-pubsub-init
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+    environment:
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-ssm-local}
+    volumes:
+      - ./config/pubsub-manifest.yaml:/app/pubsub-manifest.yaml:ro
+      - ./scripts/init-pubsub.py:/app/init-pubsub.py:ro
+    command: >
+      sh -c "pip install --quiet google-cloud-pubsub pyyaml &&
+             python /app/init-pubsub.py"
+
+  # ============================================================
+  # Fake GCS Server
+  # ============================================================
+  fake-gcs-server:
+    image: fsouza/fake-gcs-server:latest
+    container_name: ssm-gcs
+    command:
+      - "-scheme=http"
+      - "-port=4443"
+      - "-external-url=http://localhost:4443"
+    ports:
+      - "4443:4443"
+    volumes:
+      - gcs-data:/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:4443/storage/v1/b || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot container to create GCS buckets
+  gcs-init:
+    image: curlimages/curl:latest
+    container_name: ssm-gcs-init
+    depends_on:
+      fake-gcs-server:
+        condition: service_healthy
+    volumes:
+      - ./scripts/init-gcs.sh:/app/init-gcs.sh:ro
+      - ./config/gcs-buckets.yaml:/app/gcs-buckets.yaml:ro
+    entrypoint: ["sh", "/app/init-gcs.sh"]
+
+  # ============================================================
+  # BigQuery Emulator
+  # ============================================================
+  bigquery-emulator:
+    image: ghcr.io/goccy/bigquery-emulator:latest
+    container_name: ssm-bigquery
+    command:
+      - "--project=${GCP_PROJECT_ID:-ssm-local}"
+      - "--port=9050"
+      - "--http-port=9060"
+    ports:
+      - "9050:9050"   # gRPC
+      - "9060:9060"   # HTTP/REST
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9060 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ============================================================
+  # Cloud Functions Framework (for active-fax-cloud-func)
+  # ============================================================
+  # Uncomment and configure when ready to test cloud functions locally.
+  # Requires building the function JAR first.
+  #
+  # functions-framework:
+  #   build:
+  #     context: ../../dssc-active-fax-cloud-func
+  #     dockerfile: Dockerfile.local
+  #   container_name: ssm-functions
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - FUNCTION_TARGET=${FUNCTION_TARGET:-gcfv2storage.StorageEventFunction}
+  #     - STORAGE_EMULATOR_HOST=http://fake-gcs-server:4443
+  #     - DESTINATION_BUCKET=ssm-local-clean
+  #     - DESTINATION_PATH=processed
+
+volumes:
+  mongodb-data:
+  gcs-data:

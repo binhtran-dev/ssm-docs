@@ -1,0 +1,145 @@
+# SSM Platform — Pub/Sub Topics & Subscriptions Manifest
+# This is the single source of truth for all Pub/Sub resources used locally.
+# The init-pubsub.py script reads this file to create topics/subscriptions on the emulator.
+
+project: ssm-local
+
+topics:
+  # ── Document Service ──────────────────────────────────────
+  - name: document.scan.local
+    description: Document scan requests (document-service → clamav/upload-handler)
+    subscriptions:
+      - name: document.document.scan.local
+        description: Consumed by document-service for scan processing
+
+  - name: document.status.local
+    description: Document status updates (document-service → mit-surgical)
+    subscriptions:
+      - name: document.ssm.status.local
+        description: Consumed by mit-surgical for document status
+
+  # ── Document Upload Handler ───────────────────────────────
+  - name: virusscan.result.local
+    description: Virus scan results (upload-handler → document-service)
+    subscriptions:
+      - name: virusscan.document.result.local
+        description: Consumed by document-service for scan results
+
+  # ── Block Time Service ────────────────────────────────────
+  - name: adsi.historical.local
+    description: Release nudge historical data
+    subscriptions:
+      - name: adsi.ssm.releasenudge.local
+        description: Consumed by block-time-service for release nudge
+
+  - name: dssc.email.local
+    description: Email notifications
+    subscriptions: []
+
+  - name: metrics.event.local
+    description: Metrics and analytics events (multiple publishers)
+    subscriptions: []
+
+  # Block time subscription trigger topics
+  - name: cron.blocktime.opentime.local
+    description: Cron trigger for open time processing
+    subscriptions:
+      - name: cron.blocktime.opentimesubscriber.local
+        description: Open time subscriber
+      - name: clinx.blocktime.opentimesubscription.local
+        description: Clinx open time subscriber
+
+  - name: blocktime.release.local
+    description: Block time release events
+    subscriptions:
+      - name: consumer.blocktime.release.local
+        description: Release event consumer
+
+  - name: bts.release-reco.local
+    description: Release reconciliation cron trigger
+    subscriptions:
+      - name: cron.bts.release-reco.local
+        description: Release reconciliation consumer
+
+  - name: blocktime.slot.local
+    description: Block time slot events
+    subscriptions:
+      - name: consumer.blocktime.slot.local
+        description: Slot event consumer
+
+  - name: blocktime.case.local
+    description: Block time case events
+    subscriptions:
+      - name: consumer.blocktime.case.local
+        description: Case event consumer
+
+  - name: blocktime.notification.local
+    description: Block time notifications
+    subscriptions:
+      - name: consumer.blocktime.notification.local
+        description: Notification consumer
+
+  - name: bts.nudge-email.local
+    description: Nudge email cron trigger
+    subscriptions:
+      - name: cron.bts.nudge-email.local
+        description: Nudge email consumer
+
+  # ── MIT Surgical (Case Tracker) ───────────────────────────
+  - name: ssm.notification.local
+    description: SSM notifications
+    subscriptions:
+      - name: consumer.ssm.notification.local
+        description: Notification consumer
+
+  - name: ssm.surgeryrequest.local
+    description: Surgery requests (mit-surgical → block-time-service)
+    subscriptions:
+      - name: ssm.blocktime.surgeryrequest.local
+        description: Consumed by block-time-service for surgery requests
+
+  - name: edsl.notification.local
+    description: EDSL notifications
+    subscriptions: []
+
+  - name: ssm.compliance-logging.local
+    description: Compliance/audit logging (multiple publishers)
+    subscriptions: []
+
+  # Provisioning topics (external → mit-surgical)
+  - name: provision.practice.local
+    description: Practice provisioning
+    subscriptions:
+      - name: provision.ssm.practice.local
+        description: Consumed by mit-surgical
+
+  - name: provision.surgeon.local
+    description: Surgeon provisioning
+    subscriptions:
+      - name: provision.ssm.surgeon.local
+        description: Consumed by mit-surgical
+
+  - name: provision.hospitalunit.local
+    description: Hospital unit provisioning
+    subscriptions:
+      - name: provision.ssm.hospitalunit.local
+        description: Consumed by mit-surgical
+
+  - name: provision.user.local
+    description: User provisioning
+    subscriptions:
+      - name: provision.ssm.user.local
+        description: Consumed by mit-surgical
+
+  - name: provision.room.local
+    description: Room provisioning
+    subscriptions:
+      - name: provision.ssm.room.local
+        description: Consumed by mit-surgical
+
+  # Authorization
+  - name: ssm.authorization.local
+    description: Authorization events
+    subscriptions:
+      - name: consumer.ssm.authorization.local
+        description: Consumed by mit-surgical
