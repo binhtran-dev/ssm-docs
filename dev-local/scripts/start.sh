@@ -21,18 +21,18 @@ fi
 # Handle --clean flag
 if [ "$1" = "--clean" ]; then
     echo "Cleaning up volumes..."
-    docker compose down -v
+    docker-compose down -v
 fi
 
 echo "Starting SSM local development environment..."
 echo "================================================"
 
 # Start all services
-docker compose up -d
+docker-compose up -d
 
 echo ""
 echo "Waiting for services to be healthy..."
-docker compose ps
+docker-compose ps
 
 echo ""
 echo "================================================"
@@ -51,5 +51,5 @@ echo "  export STORAGE_EMULATOR_HOST=http://localhost:4443"
 echo "  export BIGQUERY_EMULATOR_HOST=http://localhost:9060"
 echo "  export SPRING_DATA_MONGODB_URI=mongodb://localhost:27017/<your-database>"
 echo ""
-echo "To stop: docker compose down"
-echo "To stop and clean: docker compose down -v"
+echo "To stop: docker-compose down"
+echo "To stop and clean: docker-compose down -v"

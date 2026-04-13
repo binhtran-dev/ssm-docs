@@ -88,6 +88,7 @@ services:
   # ============================================================
   bigquery-emulator:
     image: ghcr.io/goccy/bigquery-emulator:latest
+    platform: linux/amd64
     container_name: ssm-bigquery
     command:
       - "--project=${GCP_PROJECT_ID:-ssm-local}"
