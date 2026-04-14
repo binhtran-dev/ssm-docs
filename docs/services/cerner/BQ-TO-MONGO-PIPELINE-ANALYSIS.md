@@ -62,7 +62,7 @@ The `CCLBatchPipeline.applyJobBranch()` pattern — feature-flagged branches wit
 - Row validation (`requiredFields()` + `validateRow()`)
 - DLQ routing (`emitToDlq()` / `emitToMain()`)
 
-**Adaptation needed:** Rename to `BaseMapperFn` or `BaseSyncFn`. Change output type from `PubsubMessage` to a generic `Document` / `org.bson.Document`. DLQ could route to a dead-letter MongoDB collection or Pub/Sub topic.
+**Adaptation needed:** Rename to `BaseMapperFn` or `BaseSyncFn`. Change output type from `PubsubMessage` to a generic `Document` / `org.bson.Document`. DLQ should route to a dead-letter MongoDB collection (no Pub/Sub in this pipeline).
 
 ### 3.3 Job Interface + Factory (HIGH reuse)
 
@@ -296,13 +296,13 @@ Existing pipeline uses `--network` and `--subnetwork` for Dataflow workers to re
 |------|-------------------------------|---------------------------|
 | **Testing** | No tests (JUnit 4 dependency unused) | JUnit 5 + `TestPipeline` for transforms, Testcontainers for MongoDB integration tests |
 | **Template type** | Classic (limited: no pre/post steps) | **Flex Template** (Docker-based, supports driver program logic) |
-| **Error handling** | DLQ to Pub/Sub topic only | DLQ to Pub/Sub + structured error logging + dead-letter MongoDB collection |
+| **Error handling** | DLQ to Pub/Sub topic only | Dead-letter MongoDB collection + structured error logging (no Pub/Sub) |
 | **Credential management** | GCP-native only | HashiCorp Vault with GCP Auth Method |
 | **Concurrency** | None (no overlap protection) | Firestore lease-based locking |
 | **Data quality** | None | Pre-flight source validation + post-flight reconciliation |
 | **Monitoring** | Beam metrics only | Beam metrics + Cloud Monitoring custom dashboards + alerting |
 | **Query duplication** | All 4 queries are identical (placeholder) | Each query targets its specific Dataverse view |
-| **IaC** | Manual GCP resource setup | **Terraform** for topics, subscriptions, Dataflow schedules, IAM, VPC peering |
+| **IaC** | Manual GCP resource setup | **Terraform** for Dataflow schedules, IAM, VPC peering, MongoDB Atlas config |
 | **Packaging** | Fat JAR only | Fat JAR + Docker image (Flex Template) |
 | **Java** | 17 | 17 (or 21 if Beam supports it by then) |
 
