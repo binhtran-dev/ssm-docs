@@ -1,4 +1,4 @@
-I would like to create a brand new repository for docs and dev-local setup that is commons for all of the projects. Each project will include the same version of doc repo as the github sub-module
+I would like to create a brand new repository for docs and dev-local setup that is commons for all of the projects. Each project will include the same version of doc repo as the git sub-module
 
 The doc repo include:
 
