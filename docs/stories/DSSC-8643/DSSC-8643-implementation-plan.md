@@ -8,27 +8,15 @@
 
 **File:** Practice.java
 
-Current last field before getters: `private String primaryHospital;`
+Refactor to use Lombok `@Data` — removes all manual getters, setters, and `toString()`. Other entities in the codebase (`SurgeryRequestLock`, `AppointmentDetail`) already use `@Data`.
 
-Add after `primaryHospital` field declaration:
+Add `@Data` annotation and `import lombok.Data;`, then add the new field after `primaryHospital`:
 
 ```java
 private String faxNumber;
 ```
 
-Add getter/setter after `setPrimaryHospital()` (before any existing `toString()`):
-
-```java
-public String getFaxNumber() {
-    return faxNumber;
-}
-
-public void setFaxNumber(String faxNumber) {
-    this.faxNumber = faxNumber;
-}
-```
-
-No Lombok — follows existing explicit getter/setter style on this entity.
+Remove all explicit getters/setters and the manual `toString()` method — Lombok generates them automatically. This also fixes a pre-existing bug where `euid` was printed twice in `toString()`.
 
 ---
 
@@ -135,7 +123,7 @@ public void getAllPractice_withNoScope_returns403() throws Exception {
 
 | File | Change Type | ~Lines Added |
 |---|---|---|
-| `entity/Practice.java` | Add field + getter/setter | +8 |
+| `entity/Practice.java` | Add `@Data`, add field, remove getters/setters/toString | -110, +3 |
 | `procedure/dto/PracticeDTO.java` | Add field + update `toString()` | +4 |
 | `resource/contract/PracticeContract.java` | Update `@PreAuthorize` + `@Parameter` doc | +5 |
 | `PracticeControllerTest.java` | Add 2 scope-level tests | +20 |
