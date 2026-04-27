@@ -1,171 +1,125 @@
 # Implementation Plan: DSSC-8553
-# SSM API — Update Unit Endpoint to Include Facility Fax Number
+# SSM API - Update Unit Endpoint to Include Facility Fax Number
 
 **Branch:** `feature/DSSC-8553-unit-fax-number`
-**Estimated effort:** 4 files changed (1 new), ~120 lines added
+**Estimated effort:** 5 files changed (no new files), ~80-110 lines updated
 
 ---
 
-## Step 1 — New file: `entity/ScheduleConfig.java`
+## Step 1 - Reuse Existing ScheduleConfig
 
 **File:** `src/main/java/org/ascension/swe/surgical/procedure/entity/ScheduleConfig.java`
 
-Create a plain `Serializable` value class with `start` and `end` `String` fields, following the existing style (no Lombok, explicit getter/setter).
-
-```java
-private String start;
-private String end;
-// + getters/setters
-```
+Do not create a new `ScheduleConfig` file. Reuse the existing class as-is unless a concrete gap is found.
 
 ---
 
-## Step 2 — `entity/Unit.java`
+## Step 2 - `entity/Unit.java` (faxNumber only)
 
 **File:** `src/main/java/org/ascension/swe/surgical/procedure/entity/Unit.java`
 
-Add `import java.util.List;`. Add the following fields after `hospitalName`, with getters/setters:
+Add only:
 
 ```java
-private Boolean openTimeConfig;
-private Boolean partialReleaseEnabled;
-private Boolean disableScheduling;
-private List<String> requestTypes;
-private List<String> calendarTypes;
-private Boolean officeOpenTimeDisabled;
-private ScheduleConfig scheduleConfig;
-private Boolean addressRequired;
 private String faxNumber;
 ```
 
-**Update `toString()` to include `faxNumber`:**
+Update `toString()` to include `faxNumber`.
 
-```java
-@Override
-public String toString() {
-    return "Unit{" +
-            "id='" + id + '\'' +
-            ", name='" + name + '\'' +
-            ", hospital=" + hospital +
-            ", hospitalName='" + hospitalName + '\'' +
-            ", faxNumber='" + faxNumber + '\'' +
-            '}';
-}
-```
+Keep existing model behavior unchanged:
+
+1. Keep primitive booleans (no `Boolean` wrapper migration).
+2. Keep enum-backed entity collections:
+   - `List<RequestTypeEnum> requestTypes`
+   - `List<CalendarTypeEnum> calendarTypes`
+3. No entity conversion to `List<String>`.
 
 ---
 
-## Step 3 — `dto/UnitDTO.java`
+## Step 3 - `dto/UnitDTO.java` (minimal)
 
 **File:** `src/main/java/org/ascension/swe/surgical/procedure/dto/UnitDTO.java`
 
-Add `import java.util.List;` and `import org.ascension.swe.surgical.procedure.entity.ScheduleConfig;`. Add the following fields after `hospitalTimeZone`, with getters/setters:
+Add `faxNumber` only if missing:
 
 ```java
-private String ministry;
-private String hospitalCernerId;
-private Boolean openTimeConfig;
-private Boolean partialReleaseEnabled;
-private Boolean disableScheduling;
-private List<String> requestTypes;
-private List<String> calendarTypes;
-private Boolean officeOpenTimeDisabled;
-private ScheduleConfig scheduleConfig;
-private Boolean addressRequired;
 private String faxNumber;
 ```
 
-> Note: `ministry` was already projected by the aggregation but was never declared as a DTO field — it must be added here.
+Already implemented in DTO and out of scope for new changes:
+
+1. `ministry`
+2. `hospitalCernerId`
+
+Compatibility rules:
+
+1. Keep current boolean semantics (treat null-like values as false where applicable).
+2. Keep existing `requestTypes` / `calendarTypes` behavior unchanged.
 
 ---
 
-## Step 4 — `repository/impl/HospitalRepository.java`
+## Step 4 - `repository/impl/HospitalRepository.java` (minimal projection change)
 
 **File:** `src/main/java/org/ascension/swe/surgical/procedure/repository/impl/HospitalRepository.java`
 
-In `findAllUnitsByHospitalIds()`, replace the `Aggregation.project(...)` block. All new unit fields must be listed explicitly, and `hospitalCernerId` must be joined from `hospitalData`.
+In `findAllUnitsByHospitalIds()`:
 
-**Replace:**
+1. Add `faxNumber` to the existing `Aggregation.project(...)` fields from the `Unit` document.
+2. Keep current `hospitalData` mappings (`ministry`, `market`, `ministryLocation`, `hospitalTimeZone`, `hospitalCernerId`).
+3. Do not map `hospitalData.faxNumber` because Hospital currently has no `faxNumber` field.
 
-```java
-Aggregation.project("id", "name", HOSPITAL, "hospitalName")
-        .and("hospitalData.ministry").as(MINISTRY)
-        .and("hospitalData.market").as(MARKET)
-        .and("hospitalData.ministryLocation").as(MINISTRY_LOCATION)
-        .and("hospitalData.timeZone").as("hospitalTimeZone")
-```
-
-**With:**
-
-```java
-Aggregation.project("id", "name", HOSPITAL, "hospitalName",
-                "openTimeConfig", "partialReleaseEnabled", "disableScheduling",
-                "requestTypes", "calendarTypes", "officeOpenTimeDisabled",
-                "scheduleConfig", "addressRequired", "faxNumber")
-        .and("hospitalData.ministry").as(MINISTRY)
-        .and("hospitalData.market").as(MARKET)
-        .and("hospitalData.ministryLocation").as(MINISTRY_LOCATION)
-        .and("hospitalData.timeZone").as("hospitalTimeZone")
-        .and("hospitalData.cernerId").as("hospitalCernerId")
-```
-
-No other changes to this file.
+No full projection rewrite.
 
 ---
 
-## Step 5 — Update Existing Tests
+## Step 5 - Update Tests
 
-No new test classes needed. Update the `setUp()` data in two existing test files so that assertions using `ModelHelper.writeValueAsString()` remain consistent with the expanded DTO shape.
+### 5.1 Repository and Service Unit Tests
 
-### 5.1 `HospitalRepositoryTest.java`
+**Files:**
 
-**File:** `src/test/unit/java/org/ascension/swe/surgical/procedure/repository/impl/HospitalRepositoryTest.java`
+1. `src/test/unit/java/org/ascension/swe/surgical/procedure/repository/impl/HospitalRepositoryTest.java`
+2. `src/test/unit/java/org/ascension/swe/surgical/procedure/service/impl/HospitalServiceImplTest.java`
 
-In `setUp()`, after `unitDTO.setHospitalTimeZone(...)`, set the new fields on the test `unitDTO` to match expected aggregation output. At minimum:
+Update fixtures/assertions to:
 
-```java
-unitDTO.setFaxNumber("5121234567");
-unitDTO.setHospitalCernerId("W1-592210");
-unitDTO.setOpenTimeConfig(true);
-unitDTO.setPartialReleaseEnabled(true);
-unitDTO.setDisableScheduling(false);
-unitDTO.setRequestTypes(List.of("WEB_FORM_ATTACHMENT"));
-unitDTO.setCalendarTypes(List.of("BLOCK"));
-unitDTO.setOfficeOpenTimeDisabled(false);
-unitDTO.setAddressRequired(false);
-```
+1. Include and assert `faxNumber` in relevant Unit/UnitDTO objects.
+2. Do not set primitive booleans to `null`.
+3. Keep enum-based behavior for entity request/calendar types.
 
-Update any string equality assertions on the serialized DTO accordingly.
+### 5.2 Controller Contract Tests
 
-### 5.2 `HospitalServiceImplTest.java`
+**Files:**
 
-**File:** `src/test/unit/java/org/ascension/swe/surgical/procedure/service/impl/HospitalServiceImplTest.java`
+1. `src/test/unit/java/org/ascension/swe/surgical/procedure/resource/HospitalControllerTest.java`
+2. `src/test/integration/java/org/ascension/swe/surgical/procedure/resource/HospitalControllerIT.java`
 
-In `setUp()`, set all new `Unit` fields to `null` on `unit1`, `unit2`, `unit3` to keep objects explicitly null-safe:
-
-```java
-unit1.setFaxNumber(null);
-unit1.setOpenTimeConfig(null);
-unit1.setScheduleConfig(null);
-// repeat for unit2, unit3
-```
+Add assertions that `GET /hospital/user/units/` includes `faxNumber` and does not regress existing payload fields.
 
 ---
 
-## Step 6 — Verify Build
+## Step 6 - Data Backfill
+
+Because `faxNumber` is added to `Unit`, backfill existing Unit documents as needed before QA verification.
+
+Validation target: units returned by `GET /hospital/user/units/` include expected `faxNumber` values.
+
+---
+
+## Step 7 - Verify Build
 
 ```bash
 cd /Users/binhtran/work/projects/ssm/mit-surgical
-mvn clean test -pl . -Dtest="UnitDTOTest,UnitRepositoryTest,HospitalRepositoryTest,HospitalServiceImplTest" -DfailIfNoTests=false
+mvn clean test -pl . -Dtest="UnitDTOTest,UnitRepositoryTest,HospitalRepositoryTest,HospitalServiceImplTest,HospitalControllerTest,HospitalControllerIT" -DfailIfNoTests=false
 ```
 
-All 4 test classes must pass. No new test failures should be introduced.
+All listed test classes must pass with no regression failures.
 
 ---
 
-## Step 7 — Post-Deployment (QA Environment)
+## Step 8 - Post-Deployment (QA Environment)
 
-After the service is deployed to QA, flush the Redis cache entry so that `GET /hospital/user/units/` does not serve stale projections missing `faxNumber`.
+After QA deployment, flush `SURGERY_REQUEST_HOSPITAL_UNITDTOS` cache entries so `GET /hospital/user/units/` returns refreshed projections including `faxNumber`.
 
 **Redis CLI command (run against the QA Redis instance):**
 
@@ -185,12 +139,14 @@ curl -X DELETE https://<qa-host>/actuator/caches/SURGERY_REQUEST_HOSPITAL_UNITDT
 
 | # | File | Change |
 |---|---|---|
-| 1 | `entity/ScheduleConfig.java` | **New file** — embedded value class (`start`, `end`) |
-| 2 | `entity/Unit.java` | Add 9 new fields + getters/setters + update `toString()` |
-| 3 | `dto/UnitDTO.java` | Add 11 new fields (`ministry`, `hospitalCernerId` + 9 unit fields) + getters/setters |
-| 4 | `repository/impl/HospitalRepository.java` | Add all new fields + `hospitalCernerId` to aggregation `project()` call |
-| 5 | `HospitalRepositoryTest.java` | Set all new fields on test `unitDTO` in `setUp()` |
-| 6 | `HospitalServiceImplTest.java` | Set new fields to `null` on `unit1/2/3` in `setUp()` |
+| 1 | `entity/Unit.java` | Add `faxNumber`; update `toString()` |
+| 2 | `dto/UnitDTO.java` | Add `faxNumber` only if missing |
+| 3 | `repository/impl/HospitalRepository.java` | Add `faxNumber` to existing Unit projection |
+| 4 | `HospitalRepositoryTest.java` | Add `faxNumber` fixture/assertions; keep primitive/enum semantics |
+| 5 | `HospitalServiceImplTest.java` | Add `faxNumber` fixture/assertions; no null primitive assignments |
+| 6 | `HospitalControllerTest.java` | Assert `faxNumber` in units response |
+| 7 | `HospitalControllerIT.java` | Assert `faxNumber` in endpoint contract |
 
-**Production files changed: 4 (1 new)**
-**Test files changed: 2**
+**Production files changed: 3**
+**Test files changed: 4**
+**No new files**
