@@ -1,0 +1,1 @@
+https://www.figma.com/design/fTavnSI8sRCw1EfXVYpU7G/Fax-Management?node-id=971-14724&p=f&t=LmLlxAs2RDkXCdIX-0
