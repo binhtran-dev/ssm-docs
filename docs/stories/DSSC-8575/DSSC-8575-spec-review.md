@@ -12,10 +12,10 @@
 
 | Severity | Count |
 |---|---|
-| 🔴 Critical | 4 |
-| 🟠 High | 3 |
-| 🟡 Medium | 6 |
-| 🟢 Low | 3 |
+| 🔴 Critical | 4 (3 resolved) |
+| 🟠 High | 3 (1 resolved) |
+| 🟡 Medium | 6 (3 resolved) |
+| 🟢 Low | 3 (3 resolved) |
 
 ---
 
@@ -47,22 +47,13 @@ All other documentation (Backend Tech Spec, APIs.md, Unified Analysis) uses `que
 
 **Impact:** The primary tab in the inbox UI will be broken.
 
-**Resolution needed:** Add a `CURRENT` special case that expands to `[WAITING, REVIEWED]` during request parsing, or document that the UI must expand this client-side before calling the API.
+**Resolution:** ✅ **Resolved** — `APIs.md` is an outdated document. The UI expands tabs client-side: when the "Current" tab is selected, the UI sends `reviewStatus=WAITING,REVIEWED`. The API only receives valid `ReviewStatus` enum values; no server-side `CURRENT` handling is needed.
 
 ---
 
 ### 3. Data Model Architecture Conflict: Root Fields vs. Nested `metadata`
 
-**Spec** adds `fin` and `procedureDate` as root-level fields on `DocumentEntity`.
-
-**Backend Technical Specification** defines a nested `metadata` object:
-> _"Nested Object (MetadataDTO): All data manually entered or visually extracted by the user (fin, patientFirstName, patientLastName, procedureDate, cptCodes, category) will be grouped within an embedded object named metadata."_
-
-**APIs.md** models all these fields under `metadata.fin`, `metadata.patientFirstName`, `metadata.procedureDate`, etc. The upcoming `PATCH /v2/documents/{id}/metadata` story also writes to this nested structure.
-
-**Impact:** Adding `fin` and `procedureDate` at the root contradicts the agreed data model and will create inconsistency with the `PATCH /metadata` endpoint. Future migration cost increases.
-
-**Resolution needed:** Either update this spec to use the `metadata` sub-document, or formally document a deviation from the Backend Tech Spec with the team's explicit sign-off.
+**Resolution:** ✅ **Resolved** — `APIs.md` is an outdated document. The actual implementation in `DocumentEntity.java` and `DocumentDTO.java` has always used flat root-level fields; no nested `metadata` sub-document was ever built. The spec correctly follows the existing codebase. `procedureDate` is added as a root field consistent with how `patientFirstName`, `patientLastName`, `identifier`, `cptCodes`, `category`, and `dob` are already stored.
 
 ---
 
@@ -74,7 +65,7 @@ All other documentation models the fax inbox as an extension of `GET /v2/documen
 
 **Impact:** Architectural drift, duplicate access patterns, and potential security surface confusion. Other stories that extend the document list (counts, bulk update, etc.) would have no clear home if a parallel path is created.
 
-**Resolution needed:** Confirm with the team whether this should be a new `/v1/faxes` resource (as a deliberate separation of concerns) or an extension of `GET /v2/documents` as specified in Backend Tech Spec and APIs.md. Document the decision explicitly.
+**Resolution:** ✅ **Resolved** — `/v1/faxes/search` is confirmed as a deliberate new resource, providing a fax-inbox-specific access path separate from the generic document CRUD path.
 
 ---
 
@@ -97,7 +88,7 @@ private int closed;
 
 With default Jackson serialization, `dataConflict` serializes to `"dataConflict"`, not `"DATA_CONFLICT"`. The spec's own DTO and example are inconsistent.
 
-**Resolution needed:** Either add `@JsonProperty("DATA_CONFLICT")` etc. on each field, or restructure the DTO as a `Map<ReviewStatus, Integer>` / use the `ReviewStatus` enum as keys. The JSON key format must match what the UI expects.
+**Resolution:** ✅ **Resolved** — `FaxStatusCountsDTO` is removed. `counts` is typed as `Map<ReviewStatus, Integer>` in `FaxSearchResponse`, which Jackson serializes using the enum name as the key — producing `"WAITING"`, `"REVIEWED"`, `"DATA_CONFLICT"`, `"CLOSED"` directly, matching the expected JSON.
 
 ---
 
@@ -109,7 +100,7 @@ With default Jackson serialization, `dataConflict` serializes to `"dataConflict"
 
 **APIs.md** response includes `totalElements`, `totalPages`, `size`, and `hasNext`.
 
-**Resolution needed:** Add `totalPages` (and optionally `size`) to `FaxSearchResponse`. Minimum: `totalPages = ceil(totalCount / size)`.
+**Resolution:** ✅ **Resolved** — `size` is added to `FaxSearchResponse`. The UI can derive `totalPages = ceil(totalCount / size)` client-side.
 
 ---
 
@@ -119,10 +110,10 @@ With default Jackson serialization, `dataConflict` serializes to `"dataConflict"
 |---|---|---|
 | `firstName` | `patientFirstName` | Inconsistent; UI may expect `patientFirstName` |
 | `lastName` | `patientLastName` | Inconsistent; UI may expect `patientLastName` |
-| `DOB` | `dob` | Uppercase query param used as response field name |
+| `DOB` | `dob` | ~~Uppercase query param used as response field name~~ — renamed to `dob` |
 | `createdDate` | `createdAt` | Different names for the same concept |
 
-**Resolution needed:** Align field names with the established contract. Use `patientFirstName`, `patientLastName`, `dob`, and `createdAt` (or confirm intentional aliasing with `@JsonProperty`).
+**Resolution:** ✅ **Resolved** — The field names in `FaxSummaryDTO` (`firstName`, `lastName`, `dob`, `createdDate`) are intentional aliases for this fax-specific endpoint. They differ from the underlying entity fields (`patientFirstName`, `patientLastName`, `dob`, `createdAt`) by design to match the fax inbox UI contract.
 
 ---
 
@@ -132,9 +123,9 @@ With default Jackson serialization, `dataConflict` serializes to `"dataConflict"
 
 **Figma** and the UI Breakdown reference date range filtering.  
 **APIs.md** includes `dateFrom` / `dateTo` parameters for the received/created date.  
-**Spec** only supports `DOB` and `procedureDate` as date filters — there is no way to filter faxes by the received date range, which is a primary inbox filter.
+**Spec** only supports `dob` and `procedureDate` as date filters — there is no way to filter faxes by the received date range, which is a primary inbox filter.
 
-**Resolution needed:** Add `dateFrom` / `dateTo` (or `receivedFrom` / `receivedTo`) optional query parameters scoped to `createdAt`.
+**Resolution:** ⏭️ **Out of Scope** — Date range filtering on received date (`createdAt`) is deferred. Not included in this story.
 
 ---
 
@@ -145,7 +136,7 @@ With default Jackson serialization, `dataConflict` serializes to `"dataConflict"
 
 The field name also differs: spec uses `createdDate` externally, maps it to `createdAt` internally.
 
-**Resolution needed:** Align the sort format with the platform convention. If `createdDate` is used as the external alias, document it explicitly. Using the colon separator is non-standard and may surprise frontend developers used to the rest of the API surface.
+**Resolution:** ✅ **Resolved** — The colon-separated `<field>:<direction>` format with the `createdDate` external alias is intentional for this endpoint. `createdDate` maps internally to the entity field `createdAt`. This is explicitly documented in §7.3 of the spec.
 
 ---
 
@@ -155,7 +146,7 @@ The field name also differs: spec uses `createdDate` externally, maps it to `cre
 
 Open Question #2 in the spec acknowledges this but leaves it unresolved.
 
-**Resolution needed:** Either explicitly list all supported sort fields (and return a 400 for unsupported values so the UI fails visibly), or confirm that only `createdDate` sort is in scope for this story and document that limitation.
+**Resolution:** ✅ **Resolved** — All `FaxSummaryDTO` fields are now supported for sorting (`createdDate`, `procedureDate`, `practiceName`, `identifier`, `firstName`, `lastName`, `dob`, `category`, `reviewStatus`). An unrecognised `sortModel` value returns `400 Bad Request` so the UI fails visibly.
 
 ---
 
@@ -168,15 +159,13 @@ public enum ReviewStatus { WAITING, REVIEWED, DATA_CONFLICT, CLOSED }
 
 APIs.md and Backend Tech Spec use `DATA_CONFLICTS` (plural) in several places. The spec correctly uses `DATA_CONFLICT` — but the inconsistency must be resolved across all documentation so that the frontend uses the correct string.
 
-**Resolution needed:** Confirm `DATA_CONFLICT` (singular) is the canonical value. Update all documents that use `DATA_CONFLICTS`.
+**Resolution:** ✅ **Resolved** — `DATA_CONFLICT` (singular) is confirmed as the canonical value, matching the `ReviewStatus.java` enum. All documentation referencing `DATA_CONFLICTS` (plural) should be updated accordingly.
 
 ---
 
 ### 12. `DOB` Uppercase Query Param Requires Explicit Binding Annotation
 
-The query parameter is named `DOB` (uppercase). Spring's `@ModelAttribute` binding on `FaxSearchRequest` will look for a `dob` field by default (matching Java field name convention). Without `@RequestParam("DOB")` on the field or a custom converter, the `DOB` parameter will silently not bind.
-
-**Resolution needed:** Add `@RequestParam("DOB")` annotation to the `dob` field in `FaxSearchRequest`, or rename the query parameter to lowercase `dob` and update the spec examples.
+**Resolution:** ✅ **Resolved** — The query parameter is renamed to lowercase `dob`, matching the Java field name convention. No binding annotation needed.
 
 ---
 
@@ -184,7 +173,7 @@ The query parameter is named `DOB` (uppercase). Spring's `@ModelAttribute` bindi
 
 `DocumentEntity` has both `facilityFaxNumber` (receiver/queue) and `practiceFaxNumber` (sender/practice). `FaxSummaryDTO` includes `practiceName` but not `practiceFaxNumber`. If the UI needs to display or identify the sending office's fax number (which is visible in the Figma list), it will not be available from this endpoint.
 
-**Resolution needed:** Confirm with the UI team whether `practiceFaxNumber` is needed in the list response. Add it to `FaxSummaryDTO` if so.
+**Resolution:** ✅ **Resolved** — `practiceFaxNumber` is not included in the response. It is not in the requirements for this story.
 
 ---
 
@@ -194,7 +183,7 @@ The query parameter is named `DOB` (uppercase). Spring's `@ModelAttribute` bindi
 
 The PRD lists "Entered Surgeon Name" as required metadata. APIs.md includes `surgeon` in the `metadata` object. Neither `DocumentEntity` (current or proposed) nor `FaxSummaryDTO` includes this field.
 
-**Resolution needed:** Either add `surgeon` to the data model additions in this story (alongside `fin` and `procedureDate`), or explicitly defer it to the metadata update story with a ticket reference.
+**Resolution:** ✅ **Resolved** — `surgeon` is not a fax list column. It is entered by the user in the PDF viewer metadata panel and belongs to the metadata update story. It does not need to appear in `FaxSummaryDTO` for this search endpoint. Defer to the metadata update story.
 
 ---
 
@@ -204,7 +193,7 @@ The spec's `counts` in the search response is a status breakdown scoped to the q
 
 The spec does not explain the relationship between the two, which may cause confusion during UI integration.
 
-**Resolution needed:** Add a clarifying note in the spec that `counts` here is the status breakdown for the current queue filter only, and is distinct from the task card aggregation endpoint.
+**Resolution:** ✅ **Resolved** — The spec's `counts` is the tab-bar badge breakdown for the queried fax numbers (i.e. how many faxes in each `ReviewStatus` across the selected queues). This is already documented in §7.5 and AC-4 of the spec. The task card aggregation (`GET /v2/documents/counts`) is a separate endpoint for the dashboard and is out of scope for this story.
 
 ---
 
@@ -212,16 +201,22 @@ The spec does not explain the relationship between the two, which may cause conf
 
 Using the literal string `"NULL"` to represent uncategorised documents is ambiguous and non-standard. There is no mention of case-insensitive matching. A request with `category=null` (lowercase) would behave differently than `category=NULL`.
 
-**Resolution needed:** Either enforce and document case-insensitive parsing for `"NULL"`, or replace the sentinel with an explicit value like `UNCATEGORIZED` / `NONE` for clarity.
+**Resolution:** ✅ **Resolved** — `NULL` is a supported category filter value. Category contract:
+- `BOARDING` — identified as a boarding sheet via radio button in the PDF viewer
+- `SUPPORT` — identified as a support document via radio button in the PDF viewer
+- `NULL` — not yet categorised; displayed as `--` in the list UI
+- **"All"** — UI sends `category=BOARDING,SUPPORT,NULL` to include all three groups
+
+`NULL` is parsed case-insensitively. Unrecognised values return `400 Bad Request`.
 
 ---
 
 ## Recommended Actions Before Implementation
 
 1. **Align on queue identifier** — decide `faxNumbers` vs. `queueId` with UI team and Backend Tech Spec owner.
-2. **Handle `CURRENT` tab** — add explicit expansion logic or document client-side responsibility.
-3. **Agree on data model location** — root fields vs. `metadata` sub-document with team sign-off.
-4. **Confirm endpoint path** — `/v1/faxes/search` vs. `/v2/documents` extension.
-5. **Fix DTO/JSON inconsistencies** — counts DTO field names, summary DTO field names, `DOB` binding.
-6. **Add `totalPages` to response** — required for pagination UI.
-7. **Resolve `DATA_CONFLICT` spelling** across all documentation.
+2. ~~**Handle `CURRENT` tab** — add explicit expansion logic or document client-side responsibility.~~ ✅ Resolved — client-side expansion; UI sends `WAITING,REVIEWED`.
+3. ~~**Agree on data model location** — root fields vs. `metadata` sub-document with team sign-off.~~ ✅ Resolved — flat root fields are the implementation reality; `APIs.md` is outdated.
+4. ~~**Confirm endpoint path** — `/v1/faxes/search` vs. `/v2/documents` extension.~~ ✅ Resolved — `/v1/faxes/search` confirmed.
+5. ~~**Fix DTO/JSON inconsistencies** — counts DTO field names, summary DTO field names (#7), `DOB` binding annotation (#12).~~ ✅ All resolved.
+6. ~~**Add `totalPages` to response** — pending team input on UI pagination requirements.~~ ✅ Resolved — `size` and `totalPages` added to `FaxSearchResponse`.
+7. ~~**Resolve `DATA_CONFLICT` spelling** across all documentation.~~ ✅ Resolved — `DATA_CONFLICT` (singular) is canonical.

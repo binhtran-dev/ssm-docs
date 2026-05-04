@@ -28,7 +28,7 @@ Currently, no fax-specific search endpoint exists in `dssc-document-service`. Th
 1. Create a new `GET /v1/faxes/search` endpoint that the Fax Management UI consumes as its primary inbox data source.
 2. Return a paginated list of fax summaries with all fields required by the inbox table.
 3. Include a `counts` breakdown by `ReviewStatus` (scoped to the queried fax numbers, not to the page filter) so the UI can render tab counts in a single request.
-4. Add `fin` and `procedureDate` to `DocumentEntity` and its associated DTO so they can be stored, searched, and returned.
+4. Add `procedureDate` to `DocumentEntity` and its associated DTO so it can be stored, searched, and returned. (`fin` maps to the existing `identifier` field — no new field required.)
 
 ---
 
@@ -38,7 +38,7 @@ Currently, no fax-specific search endpoint exists in `dssc-document-service`. Th
 - Atlas Search index setup (separate ticket per backend spec notes).
 - Any caching layer — counts are computed per-request in this story; a caching story may follow.
 - UI changes.
-- Any write operations (saving `fin`, `procedureDate` is covered by a separate metadata update story).
+- Any write operations (saving `procedureDate` is covered by a separate metadata update story).
 - JWT/authentication infrastructure — existing scope enforcement is reused unchanged.
 
 ---
@@ -60,15 +60,13 @@ Currently, no fax-specific search endpoint exists in `dssc-document-service`. Th
 | `note` | `String` | |
 | `facilityFaxNumber` | `String` | Receiver fax number — used as queue identifier |
 | `practiceFaxNumber` | `String` | Sender fax number |
+| `identifier` | `String` | FIN (account number) |
 
 ### 4.2 Missing fields
 
 | Field | Notes |
 |---|---|
-| `fin` | FIN (account number) — not yet stored in entity |
 | `procedureDate` | Procedure/surgery date — not yet stored in entity |
-
-> `identifier` is **not** the FIN. It is an internal GCS signed-URL access token and must not be repurposed.
 
 ### 4.3 `DocumentCategoryEnum`
 
@@ -76,7 +74,7 @@ Currently, no fax-specific search endpoint exists in `dssc-document-service`. Th
 public enum DocumentCategoryEnum { BOARDING, SUPPORT }
 ```
 
-Documents ingested from RightFax have no category yet (`null`). The story uses the string `"NULL"` in the request to represent filtering for uncategorised documents.
+Documents ingested from RightFax have no category yet (`null`); they are displayed as `--` in the fax list UI. The category is set by the user in the PDF viewer via a radio button: **Boarding sheet** (surgery request) → `BOARDING`, or **Support document** → `SUPPORT`. When the UI shows "All", it sends `category=BOARDING,SUPPORT,NULL` to include all three groups. The string `"NULL"` in the filter represents uncategorised documents and is parsed **case-insensitively**.
 
 ### 4.4 No existing fax search endpoint
 
@@ -90,12 +88,13 @@ Documents ingested from RightFax have no category yet (`null`). The story uses t
 
 | Field | Type | Required | Source | Notes |
 |---|---|---|---|---|
-| `fin` | `String` | No | Metadata update | FIN / account number entered by OR Scheduler |
 | `procedureDate` | `LocalDate` | No | Metadata update | Procedure date entered by OR Scheduler |
 
-**MongoDB migration:** Not required. Existing documents will return `null` for both fields until updated via the metadata update endpoint (separate story).
+> The existing `identifier` field stores the FIN / account number and is exposed as `identifier` in the API.
 
-**Corresponding DTO update:** Both fields must also be added to `DocumentDTO.java` for the existing toEntity/mapping flow to support them when they are written.
+**MongoDB migration:** Not required. Existing documents will return `null` for `procedureDate` until updated via the metadata update endpoint (separate story).
+
+**Corresponding DTO update:** `procedureDate` must also be added to `DocumentDTO.java` for the existing toEntity/mapping flow to support it when it is written.
 
 ---
 
@@ -115,11 +114,11 @@ Documents ingested from RightFax have no category yet (`null`). The story uses t
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `faxNumbers` | `String` (CSV) | Yes | Comma-separated list of facility fax numbers scoping the query to the caller's queues, e.g. `5122222222,5122121234` |
-| `status` | `String` (CSV) | Yes | Comma-separated `ReviewStatus` values. UI sends `WAITING,REVIEWED,DATA_CONFLICT` for the "Current" tab |
-| `category` | `String` (CSV) | Yes | Comma-separated values: `BOARDING`, `SUPPORT`, or `NULL` (represents uncategorised). UI sends all three for "All" |
+| `reviewStatus` | `String` (CSV) | Yes | Comma-separated `ReviewStatus` values. The UI expands tabs client-side: the "Current" tab sends `WAITING,REVIEWED`; other tabs send their respective enum values directly |
+| `category` | `String` (CSV) | Yes | Comma-separated values: `BOARDING`, `SUPPORT`, and/or `NULL` (represents uncategorised). UI sends all three for "All" |
 | `patientName` | `String` | No | Case-insensitive partial match against `patientFirstName` or `patientLastName` |
-| `DOB` | `String` (date) | No | Exact match against `dob` — format `yyyy-MM-dd` |
-| `fin` | `String` | No | Exact match against `fin` |
+| `dob` | `String` (date) | No | Exact match against `dob` — format `yyyy-MM-dd` |
+| `identifier` | `String` | No | Exact match against `identifier` |
 | `practiceName` | `String` | No | Case-insensitive partial match against `practiceName` |
 | `procedureDate` | `String` (date) | No | Exact match against `procedureDate` — format `yyyy-MM-dd` |
 | `sortModel` | `String` | Yes | Field and direction, e.g. `createdDate:desc`. Field `createdDate` maps to entity field `createdAt` |
@@ -128,7 +127,7 @@ Documents ingested from RightFax have no category yet (`null`). The story uses t
 
 **Example request:**
 ```
-GET /v1/faxes/search?faxNumbers=5122222222,5122121234&status=WAITING,REVIEWED,DATA_CONFLICT&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=10
+GET /v1/faxes/search?faxNumbers=5122222222,5122121234&reviewStatus=WAITING,REVIEWED&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=10
 ```
 
 ### 6.3 Response
@@ -143,16 +142,18 @@ GET /v1/faxes/search?faxNumbers=5122222222,5122121234&status=WAITING,REVIEWED,DA
       "createdDate": "2026-03-26 14:30:12",
       "procedureDate": "2026-03-26",
       "practiceName": "Urology Associates, P.C.",
-      "fin": "570423123",
+      "identifier": "570423123",
       "firstName": "John",
       "lastName": "Doe",
-      "DOB": "2000-01-01",
+      "dob": "2000-01-01",
       "category": "BOARDING",
       "note": "A note about something...",
+      "cptCodes": [],
       "reviewStatus": "REVIEWED"
     }
   ],
   "totalCount": 19,
+  "size": 10,
   "counts": {
     "DATA_CONFLICT": 3,
     "WAITING": 12,
@@ -163,13 +164,13 @@ GET /v1/faxes/search?faxNumbers=5122222222,5122121234&status=WAITING,REVIEWED,DA
 }
 ```
 
-> All fax fields except `id`, `createdDate`, and `reviewStatus` are nullable. `category` is `null` for documents not yet categorised; `counts` covers all four `ReviewStatus` values for the caller's queues regardless of the current `status` filter.
+> All fax fields except `id`, `createdDate`, and `reviewStatus` are nullable. `category` is `null` for documents not yet categorised; `counts` covers all four `ReviewStatus` values for the caller's queues regardless of the current `reviewStatus` filter.
 
 **Other HTTP responses:**
 
 | Status | Condition |
 |---|---|
-| `400 Bad Request` | Missing required parameters or malformed date/sort format |
+| `400 Bad Request` | Missing required parameters, unrecognised `sortModel` field/direction, or malformed date format |
 | `401 Unauthorized` | Missing or invalid token |
 | `403 Forbidden` | Token lacks required scope |
 | `500 Internal Server Error` | Unexpected error |
@@ -184,26 +185,42 @@ GET /v1/faxes/search?faxNumbers=5122222222,5122121234&status=WAITING,REVIEWED,DA
 
 ### 7.2 Main query criteria (applied to paginated results only)
 
-- `reviewStatus IN status`
+- `reviewStatus IN reviewStatus` (filter values from the `reviewStatus` request parameter)
 - `category`: parse each CSV value as follows:
-  - `"NULL"` → `Criteria.where("category").is(null)`
+  - `"NULL"` (case-insensitive) → `Criteria.where("category").is(null)`
   - `"BOARDING"` / `"SUPPORT"` → map to `DocumentCategoryEnum`
   - When multiple values are present (including `NULL`), combine with `$in` for enum values and add the null check with `$or`
+  - Return `400` for any unrecognised value
 - `patientName` (if present) → `$or [ { patientFirstName: { $regex: value, $options: "i" } }, { patientLastName: { $regex: value, $options: "i" } } ]`
-- `DOB` (if present) → `{ dob: LocalDate.parse(value) }`
-- `fin` (if present) → `{ fin: value }` (exact)
+- `dob` (if present) → `{ dob: LocalDate.parse(value) }`
+- `identifier` (if present) → `{ identifier: value }`
 - `practiceName` (if present) → `{ practiceName: { $regex: value, $options: "i" } }`
 - `procedureDate` (if present) → `{ procedureDate: LocalDate.parse(value) }`
 
 ### 7.3 Sorting
 
-Parse `sortModel` as `<field>:<direction>`:
+Format: `<field>:<direction>` (colon-separated). The external field name `createdDate` is an intentional alias — it maps to the entity field `createdAt`.
 
-| Request field | Entity field | Sort |
+**Behaviour (driven by the UI):**
+- Only one column is sorted at a time.
+- Default sort is on the Received column (`createdDate:desc`, newest first).
+- When the user clicks a column header, the UI sends that field with `asc` (A–Z / oldest-first).
+- Clicking the same header again reverses to `desc` (Z–A / newest-first).
+- Clicking the Received header resets to the default `createdDate:desc`.
+
+| Request field | Entity field | Supported directions |
 |---|---|---|
 | `createdDate` | `createdAt` | `asc` / `desc` |
+| `procedureDate` | `procedureDate` | `asc` / `desc` |
+| `practiceName` | `practiceName` | `asc` / `desc` |
+| `identifier` | `identifier` | `asc` / `desc` |
+| `firstName` | `patientFirstName` | `asc` / `desc` |
+| `lastName` | `patientLastName` | `asc` / `desc` |
+| `dob` | `dob` | `asc` / `desc` |
+| `category` | `category` | `asc` / `desc` |
+| `reviewStatus` | `reviewStatus` | `asc` / `desc` |
 
-Default to `createdAt:desc` if `sortModel` is unrecognised. Additional sortable fields may be added in future iterations.
+Return `400 Bad Request` if `sortModel` contains an unrecognised field or direction.
 
 ### 7.4 Pagination
 
@@ -231,11 +248,11 @@ Request DTO binding all query parameters:
 
 ```java
 private String faxNumbers;       // CSV, required
-private String status;           // CSV, required
+private String reviewStatus;     // CSV, required
 private String category;         // CSV, required
 private String patientName;      // optional
 private String dob;              // optional (String, parsed to LocalDate)
-private String fin;              // optional
+private String identifier;       // optional
 private String practiceName;     // optional
 private String procedureDate;    // optional (String, parsed to LocalDate)
 private String sortModel;        // required, e.g. "createdDate:desc"
@@ -254,26 +271,20 @@ private LocalDateTime createdDate;
 @JsonFormat(pattern = "yyyy-MM-dd")
 private LocalDate procedureDate;
 private String practiceName;
-private String fin;
+private String identifier;
 private String firstName;
 private String lastName;
 @JsonFormat(pattern = "yyyy-MM-dd")
 private LocalDate dob;
 private DocumentCategoryEnum category;
 private String note;
+private List<String> cptCodes;
 private ReviewStatus reviewStatus;
 ```
 
 ### 8.3 `model/dto/fax/FaxStatusCountsDTO.java`
 
-Status count breakdown:
-
-```java
-private int waiting;
-private int reviewed;
-private int dataConflict;
-private int closed;
-```
+Removed — not needed. `counts` is represented directly as a `Map<ReviewStatus, Integer>`, which serializes to the correct SCREAMING_SNAKE_CASE keys matching the `ReviewStatus` enum names (`WAITING`, `REVIEWED`, `DATA_CONFLICT`, `CLOSED`).
 
 ### 8.4 `model/dto/fax/FaxSearchResponse.java`
 
@@ -282,7 +293,8 @@ Wrapper response:
 ```java
 private List<FaxSummaryDTO> faxes;
 private long totalCount;
-private FaxStatusCountsDTO counts;
+private int size;
+private Map<ReviewStatus, Integer> counts;
 private int page;
 ```
 
@@ -315,7 +327,7 @@ Uses `MongoTemplate` directly (consistent with `DocumentRepository` pattern). Do
 
 **Request:**
 ```
-GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=2
+GET /v1/faxes/search?faxNumbers=5122222222&reviewStatus=WAITING,REVIEWED&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=2
 ```
 
 **Response:**
@@ -327,12 +339,13 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
       "createdDate": "2026-03-26 14:30:12",
       "procedureDate": "2026-03-26",
       "practiceName": "Urology Associates, P.C.",
-      "fin": "570423123",
+      "identifier": "570423123",
       "firstName": "John",
       "lastName": "Doe",
-      "DOB": "2000-01-01",
+      "dob": "2000-01-01",
       "category": "BOARDING",
       "note": null,
+      "cptCodes": ["12334", "67890"],
       "reviewStatus": "REVIEWED"
     },
     {
@@ -340,16 +353,18 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
       "createdDate": "2026-03-25 09:11:00",
       "procedureDate": null,
       "practiceName": null,
-      "fin": null,
+      "identifier": null,
       "firstName": null,
       "lastName": null,
-      "DOB": null,
+      "dob": null,
       "category": null,
       "note": null,
+      "cptCodes": [],
       "reviewStatus": "WAITING"
     }
   ],
   "totalCount": 19,
+  "size": 2,
   "counts": {
     "DATA_CONFLICT": 3,
     "WAITING": 12,
@@ -364,10 +379,8 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
 
 ## 10. Acceptance Criteria
 
-### AC-1: Returns paginated list filtered by fax numbers and status
-
 **Given** documents exist in MongoDB with `facilityFaxNumber = "5122222222"` and `reviewStatus = "WAITING"`  
-**When** `GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=10` is called with valid auth  
+**When** `GET /v1/faxes/search?faxNumbers=5122222222&reviewStatus=WAITING&category=BOARDING,SUPPORT,NULL&sortModel=createdDate:desc&page=0&size=10` is called with valid auth  
 **Then** response is `200 OK` containing only documents matching the fax number and status, up to `size` items
 
 ---
@@ -382,23 +395,23 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
 
 ### AC-3: Category `BOARDING` / `SUPPORT` filter works correctly
 
-**Given** documents with categories `BOARDING` and `SUPPORT` exist  
+**Given** documents with categories `BOARDING`, `SUPPORT`, and `null` exist  
 **When** `category=BOARDING` is sent  
-**Then** only `BOARDING` documents are returned and `SUPPORT` documents are excluded
+**Then** only `BOARDING` documents are returned; `SUPPORT` and uncategorised documents are excluded
 
 ---
 
 ### AC-4: `counts` reflects queue totals, not current page filter
 
 **Given** the caller's queue has `WAITING: 12`, `REVIEWED: 3`, `DATA_CONFLICT: 3`, `CLOSED: 1`  
-**When** `status=WAITING` is sent (filtering results to WAITING only)  
+**When** `reviewStatus=WAITING` is sent (filtering results to WAITING only)  
 **Then** the `counts` object still returns the full breakdown `{ WAITING: 12, REVIEWED: 3, DATA_CONFLICT: 3, CLOSED: 1 }`
 
 ---
 
 ### AC-5: Optional filters narrow results correctly
 
-**Given** documents with different `practiceName`, `fin`, `patientFirstName`/`patientLastName`, `dob`, and `procedureDate` values  
+**Given** documents with different `practiceName`, `identifier`, `patientFirstName`/`patientLastName`, `dob`, and `procedureDate` values  
 **When** any optional filter parameter is supplied  
 **Then** only documents matching that filter are returned
 
@@ -444,7 +457,7 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
 
 ### AC-11: Missing required parameters return 400
 
-**Given** a request omits `faxNumbers`, `status`, `category`, `sortModel`, `page`, or `size`  
+**Given** a request omits `faxNumbers`, `reviewStatus`, `category`, `sortModel`, `page`, or `size`, or provides an unrecognised `sortModel` field/direction or unrecognised `category` value  
 **Then** the response is `400 Bad Request`
 
 ---
@@ -453,18 +466,17 @@ GET /v1/faxes/search?faxNumbers=5122222222&status=WAITING,REVIEWED&category=BOAR
 
 ```
 dssc-document-service/src/main/java/org/ascension/swe/document/
-├── model/entity/DocumentEntity.java                     → add fin (String), procedureDate (LocalDate)
-├── model/dto/DocumentDTO.java                           → add fin (String), procedureDate (LocalDate)
+├── model/entity/DocumentEntity.java                     → add procedureDate (LocalDate)
+├── model/dto/DocumentDTO.java                           → add procedureDate (LocalDate)
 ├── model/dto/fax/FaxSearchRequest.java                  → new request DTO
 ├── model/dto/fax/FaxSummaryDTO.java                     → new per-item response DTO
-├── model/dto/fax/FaxStatusCountsDTO.java                → new counts DTO
-├── model/dto/fax/FaxSearchResponse.java                 → new wrapper response DTO
+├── model/dto/fax/FaxSearchResponse.java                 → new wrapper response DTO (counts as Map<ReviewStatus, Integer>)
 ├── resource/FaxContract.java                            → new contract interface
 ├── resource/impl/FaxController.java                     → new REST controller
 └── service/FaxSearchService.java                        → new service: search + counts aggregation
 ```
 
-**Total: 9 files (7 new, 2 modified)**
+**Total: 8 files (6 new, 2 modified)**
 
 ---
 
@@ -473,11 +485,12 @@ dssc-document-service/src/main/java/org/ascension/swe/document/
 | Test | Type | File |
 |---|---|---|
 | Returns only documents matching `faxNumbers` | Unit | `FaxSearchServiceTest` |
-| `status` filter correctly maps CSV to `ReviewStatus` enum | Unit | `FaxSearchServiceTest` |
+| `reviewStatus` filter correctly maps CSV to `ReviewStatus` enum | Unit | `FaxSearchServiceTest` |
 | `category=NULL` matches null-category documents | Unit | `FaxSearchServiceTest` |
-| `category=BOARDING` excludes `SUPPORT` and null documents | Unit | `FaxSearchServiceTest` |
+| `category=BOARDING` excludes `SUPPORT` and uncategorised documents | Unit | `FaxSearchServiceTest` |
+| Unrecognised `category` value returns `400` | Unit | `FaxSearchServiceTest` |
 | `counts` is scoped to fax numbers only, not status/category filter | Unit | `FaxSearchServiceTest` |
-| Optional filters (`patientName`, `fin`, `DOB`, `practiceName`, `procedureDate`) each narrow results | Unit | `FaxSearchServiceTest` |
+| Optional filters (`patientName`, `identifier`, `dob`, `practiceName`, `procedureDate`) each narrow results | Unit | `FaxSearchServiceTest` |
 | `patientName` is case-insensitive partial match on both first and last name | Unit | `FaxSearchServiceTest` |
 | Page out-of-bounds clamps to last page and returns correct `page` value | Unit | `FaxSearchServiceTest` |
 | `sortModel=createdDate:desc` returns results in correct order | Unit | `FaxSearchServiceTest` |
@@ -490,8 +503,8 @@ dssc-document-service/src/main/java/org/ascension/swe/document/
 
 ## 13. Definition of Done
 
-- [ ] `fin` and `procedureDate` fields added to `DocumentEntity` and `DocumentDTO`
-- [ ] All four fax DTO classes created
+- [ ] `procedureDate` field added to `DocumentEntity` and `DocumentDTO`
+- [ ] All three fax DTO classes created (`FaxSearchRequest`, `FaxSummaryDTO`, `FaxSearchResponse`)
 - [ ] `FaxContract` and `FaxController` created with `GET /v1/faxes/search`
 - [ ] `FaxSearchService` implements paginated Criteria query + counts aggregation
 - [ ] Category `NULL` handling correctly matches null-category documents
@@ -509,7 +522,7 @@ dssc-document-service/src/main/java/org/ascension/swe/document/
 | # | Question | Owner |
 |---|---|---|
 | 1 | Should `counts` be scoped strictly to `faxNumbers` only, or should it also respect the `category` filter (e.g., count only `BOARDING` faxes per status)? Current assumption: fax-numbers only so tab counts are stable. | Product + Backend |
-| 2 | Should `sortModel` support fields other than `createdDate` (e.g., `procedureDate`, `practiceName`)? | UI + Backend |
+| 2 | ~~Should `sortModel` support fields other than `createdDate` (e.g., `procedureDate`, `practiceName`)?~~ **Resolved** — all response fields are supported. |  |
 | 3 | Is an exact `fin` match sufficient, or should it also support partial / prefix matching (e.g., for partial FIN entry in the search box)? | Product |
 | 4 | Should `faxNumbers` be derived from the JWT claims (from the user's unit assignments) rather than being a caller-supplied parameter, to prevent a user querying queues they don't own? | Security + Backend |
 | 5 | What is the expected `size` range? Is a maximum page size cap needed (e.g., `max=100`) to protect MongoDB? | Backend |
